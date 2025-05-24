@@ -72,7 +72,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
-    if: ${{ success() && (!(github.event_name == 'push' && (github.ref == 'refs/heads/latest' || startsWith(github.ref, 'refs/tags/')))) }}
+    if: ${{ !(github.event_name == 'push' && (github.ref == 'refs/heads/latest' || startsWith(github.ref, 'refs/tags/'))) }}
     outputs:
       pushed: ${{ steps.push_output.outputs.pushed == 'true' }}
     steps:
@@ -249,7 +249,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
-    if: ${{ success() && needs.set_vars.outputs.is_schedule == 'true' && needs.build-and-push.outputs.pushed == 'true' }}
+    if: ${{ needs.set_vars.outputs.is_schedule == 'true' && needs.build-and-push.outputs.pushed == 'true' }}
     env:
       DOCKER_CLI_EXPERIMENTAL: enabled
     steps:
