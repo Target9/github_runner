@@ -28,6 +28,12 @@ COPY --from=runner C:\actions-runner.zip C:\actions-runner\
 RUN Add-Type -AssemblyName System.IO.Compression.FileSystem; `
     [System.IO.Compression.ZipFile]::ExtractToDirectory('actions-runner.zip', '.'); `
     Remove-Item actions-runner.zip
+
+# Install .NET Framework 4.8
+RUN Invoke-WebRequest -Uri "https://download.visualstudio.microsoft.com/download/pr/2d6bb6b2-226a-4baa-bdec-798822606ff1/8494001c276a4b96804cde7829c04d7f/ndp48-x86-x64-allos-enu.exe" -OutFile "$env:TEMP\ndp48-installer.exe"; `
+    Start-Process -FilePath "$env:TEMP\ndp48-installer.exe" -ArgumentList "/quiet /norestart" -Wait; `
+    Remove-Item "$env:TEMP\ndp48-installer.exe"
+
 #choco
 RUN powershell.exe -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
 # git, jq
@@ -39,11 +45,9 @@ RUN setx PYENV \"$env:USERPROFILE\.pyenv\pyenv-win\"
 RUN setx PATH \"$env:PYENV\bin;$env:PYENV\shims;$env:PATH\"
 RUN pyenv install 3.8.10; `
     pyenv install 3.9.13; `
-    pyenv install 3.10.11; `
-    pyenv install 3.11.9; `
-    pyenv install 3.12.10; `
-    pyenv install 3.13.3; `
-    pyenv global 3.11.9
+    pyenv install 3.10.4; `
+    pyenv install 3.11.0; `
+    pyenv global 3.11.0
 # docker, index at: https://dockermsft.blob.core.windows.net/dockercontainer/DockerMsftIndex.json
 RUN mkdir $env:temp\docker\extracted\ | out-null; `
     mkdir $env:ProgramFiles\Docker\ | out-null; `

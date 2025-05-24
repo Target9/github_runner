@@ -1,4 +1,3 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 
 name: Publish Docker image
 
@@ -6,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       push:
-        description: "Push to container registry"
+        description: "Push to docker hub"
         required: false
         default: false
         type: boolean
@@ -41,8 +40,7 @@ on:
       - ".gitignore"
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  REPO: lambda3/github-runner-windows
 
 jobs:
   set_vars:
@@ -59,60 +57,39 @@ jobs:
           is_workflow_dispatch=${{ github.event_name == 'workflow_dispatch' && !inputs.simulate_schedule }}
           echo "::set-output name=is_schedule::$is_schedule"
           echo "::set-output name=is_workflow_dispatch::$is_workflow_dispatch"
-
-  build-and-push:
-    name: Build and push image
+  push_to_registry:
+    name: Build and push image to Docker Hub
     needs: set_vars
     strategy:
       fail-fast: false
       matrix:
         year: ["2019", "2022"]
     runs-on: windows-${{ matrix.year }}
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-    if: ${{ !(github.event_name == 'push' && (github.ref == 'refs/heads/latest' || startsWith(github.ref, 'refs/tags/'))) }}
+    # do not run for pushes of tags and latest branch
+    if: ${{ success() && (!(github.event_name == 'push' && (github.ref == 'refs/heads/latest' || startsWith(github.ref, 'refs/tags/')))) }}
     outputs:
-      pushed: ${{ steps.push_output.outputs.pushed == 'true' }}
+      push_2019: ${{ steps.push_image.outputs[format('push_{0}', matrix.year)] == 'true' }}
+      push_2022: ${{ steps.push_image.outputs[format('push_{0}', matrix.year)] == 'true' }}
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
         if: ${{ needs.set_vars.outputs.is_schedule != 'true' }}
 
       - name: Check out the latest branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
         with:
           ref: latest
         if: ${{ needs.set_vars.outputs.is_schedule == 'true' }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v4
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REPO }}
           flavor: |
             latest=false
           tags: |
             type=sha,prefix=,suffix=-windowsservercore-ltsc${{ matrix.year }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.description=GitHub Runner for Windows Server Core LTSC${{ matrix.year }}
-            org.opencontainers.image.licenses=MIT
-
       - name: Check if update available
         id: check
         uses: giggio/docker-image-update-checker@v2
@@ -123,109 +100,137 @@ jobs:
           verbose: true
         if: ${{ needs.set_vars.outputs.is_schedule == 'true' }}
 
-      - name: Build and push image
-        id: build_push
-        uses: docker/build-push-action@v5
-        with:
-          context: ./runner
-          platforms: windows/amd64
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' || steps.check.outputs.needs-updating == 'true' && needs.set_vars.outputs.is_schedule == 'true' || inputs.push && needs.set_vars.outputs.is_workflow_dispatch == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            LTSC_YEAR=${{ matrix.year }}
-          outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=GitHub Runner for Windows Server Core LTSC${{ matrix.year }}
-
-      - name: Set push output
-        id: push_output
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' || steps.check.outputs.needs-updating == 'true' && needs.set_vars.outputs.is_schedule == 'true' || inputs.push && needs.set_vars.outputs.is_workflow_dispatch == 'true' }}
+      - name: Build image
+        working-directory: ./runner/
         run: |
-          echo "::set-output name=pushed::true"
+          $ErrorActionPreference = "Stop"
+          Invoke-Expression "docker build --isolation process --build-arg LTSC_YEAR=${{ matrix.year }} --pull $($env:TAGS.Split("`n") | % { '-t "' + $_ + '"' }) $($env:LABELS.Split("`n") | % { '--label "' + $_ + '"' }) ."
+          if ($LASTEXITCODE -ne 0) { throw "Docker build failed." }
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          LABELS: ${{ steps.meta.outputs.labels }}
+        if: ${{ success() && (contains(fromJson('["push", "pull_request"]'), github.event_name) || (steps.check.outputs.needs-updating == 'true' && needs.set_vars.outputs.is_schedule == 'true') || needs.set_vars.outputs.is_workflow_dispatch == 'true') }}
 
-  # scheduled: an update to year tag because of base image update, will have ran 'build-and-push' job:
+      - name: Docker login
+        id: docker_login
+        run: |
+          $ErrorActionPreference = "Stop"
+          docker login -u lambdatres -p $env:DOCKER_PASSWORD
+          if ($LASTEXITCODE -ne 0) { throw "Docker login failed." }
+        env:
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        if: ${{ success() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (steps.check.outputs.needs-updating == 'true' && needs.set_vars.outputs.is_schedule == 'true') || (inputs.push && needs.set_vars.outputs.is_workflow_dispatch == 'true')) }}
+
+      - name: Push image
+        id: push_image
+        run: |
+          $ErrorActionPreference = "Stop"
+          $($env:TAGS.Split("`n") | % {
+            docker push $_
+            if ($LASTEXITCODE -ne 0) { throw "Docker push failed." }
+          })
+          Write-Output "::set-output name=push_${{ matrix.year }}::true"
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        if: ${{ success() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (steps.check.outputs.needs-updating == 'true' && needs.set_vars.outputs.is_schedule == 'true') || (inputs.push && needs.set_vars.outputs.is_workflow_dispatch == 'true')) }}
+
+      - name: Docker logout
+        run: docker logout
+        if: ${{ always() && steps.docker_login.outcome != 'skipped' }}
+
+  # scheduled: an update to year tag because of base image update, will have ran 'push_to_registry' job:
   push_manifest_scheduled_with_year:
-    name: Push Docker manifest to Container Registry (with year, scheduled and with base image update)
+    name: Push Docker manifest to Docker Hub (with year, scheduled and with base image update)
     runs-on: windows-latest
-    needs: ["build-and-push", "set_vars"]
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
+    needs: ["push_to_registry", "set_vars"]
     strategy:
       fail-fast: false
       matrix:
         year: ["2019", "2022"]
-    if: ${{ success() && needs.set_vars.outputs.is_schedule == 'true' && needs.build-and-push.outputs.pushed == 'true' }}
+    if: ${{ success() && needs.set_vars.outputs.is_schedule == 'true' }} # can't check matrix on job.if, so we check on step.if bellow
     env:
       DOCKER_CLI_EXPERIMENTAL: enabled
     steps:
       - name: Check if should continue
         id: should
         run: |
-          $shouldContinue = "${{ needs.build-and-push.outputs.pushed == 'true' }}"
+          $shouldContinue = "${{ needs.push_to_registry.outputs[format('push_{0}', matrix.year)] == 'true' }}"
           Write-Output "::set-output name=continue::$shouldContinue"
-
       - name: Check out the latest branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
         with:
           ref: latest
         if: ${{ success() && steps.should.outputs.continue == 'true' }}
 
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker login
+        id: docker_login
+        run: |
+          $ErrorActionPreference = "Stop"
+          docker login -u lambdatres -p $env:DOCKER_PASSWORD
+          if ($LASTEXITCODE -ne 0) { throw "Docker login failed." }
+        env:
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
         if: ${{ success() && steps.should.outputs.continue == 'true' }}
 
+      # example of manifests created:
+      # lambda3/github-runner-windows:windowsservercore-ltsc2019
+      # lambda3/github-runner-windows:windowsservercore-ltsc2022
       - name: Push manifest (${{ matrix.year }})
         run: |
           $sha = $(git rev-parse --short HEAD)
-          docker manifest create ${env:REGISTRY}/${env:IMAGE_NAME}:windowsservercore-ltsc${{ matrix.year }} --amend ${env:REGISTRY}/${env:IMAGE_NAME}:$sha-windowsservercore-ltsc${{ matrix.year }}
-          docker manifest push ${env:REGISTRY}/${env:IMAGE_NAME}:windowsservercore-ltsc${{ matrix.year }}
+          docker manifest create ${env:REPO}:windowsservercore-ltsc${{ matrix.year }} --amend ${env:REPO}:$sha-windowsservercore-ltsc${{ matrix.year }}
+          docker manifest push ${env:REPO}:windowsservercore-ltsc${{ matrix.year }}
         if: ${{ success() && steps.should.outputs.continue == 'true' }}
 
-  # not scheduled, with year, pushes to main and tags, might run 'build-and-push' job (push to main) or not (push to latest and tags):
+      - name: Docker logout
+        run: docker logout
+        if: ${{ success() && steps.should.outputs.continue == 'true' }}
+
+  # not scheduled, with year, pushes to main and tags, might run 'push_to_registry' job (push to main) or not (push to latest and tags):
   push_manifest_branches_and_tags_with_year:
-    name: Push Docker manifest to Container Registry (with year, via branch and tag updates)
+    name: Push Docker manifest to Docker Hub (with year, via branch and tag updates)
     runs-on: windows-latest
-    needs: ["build-and-push", "set_vars"]
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
+    needs: ["push_to_registry", "set_vars"]
     strategy:
       fail-fast: false
       matrix:
         year: ["2019", "2022"]
-    if: ${{ always() && needs.set_vars.outputs.is_schedule != 'true' }}
+    if: ${{ always() && needs.set_vars.outputs.is_schedule != 'true' }} # can't check matrix on job.if, so we check on step.if bellow
     env:
       DOCKER_CLI_EXPERIMENTAL: enabled
     steps:
       - name: Check if should continue
         id: should
         run: |
-          $shouldContinue = "${{ (needs.build-and-push.result == 'success' && needs.build-and-push.outputs.pushed == 'true') || (needs.build-and-push.result == 'skipped' && (github.event_name == 'push' && (github.ref == 'refs/heads/latest' || github.ref_type == 'tag'))) }}"
+          Write-Output "needs.push_to_registry.result: ${{ needs.push_to_registry.result }}"
+          Write-Output "matrix.year: ${{ matrix.year }}"
+          Write-Output "format('push_{0}', matrix.year): ${{ format('push_{0}', matrix.year) }}"
+          Write-Output "needs.push_to_registry.outputs[format('push_{0}', matrix.year)]: ${{ needs.push_to_registry.outputs[format('push_{0}', matrix.year)] }}"
+          Write-Output "needs.push_to_registry.result: ${{ needs.push_to_registry.result }}"
+          Write-Output "github.event_name: ${{ github.event_name }}"
+          Write-Output "github.ref: ${{ github.ref }}"
+          Write-Output "github.ref_type: ${{ github.ref_type }}"
+          $shouldContinue = "${{ (needs.push_to_registry.result == 'success' && needs.push_to_registry.outputs[format('push_{0}', matrix.year)] == 'true') || (needs.push_to_registry.result == 'skipped' && (github.event_name == 'push' && (github.ref == 'refs/heads/latest' || github.ref_type == 'tag'))) }}"
           Write-Output "::set-output name=continue::$shouldContinue"
-
       - name: Check out the repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
         if: ${{ success() && steps.should.outputs.continue == 'true' }}
 
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker login
+        id: docker_login
+        run: |
+          $ErrorActionPreference = "Stop"
+          docker login -u lambdatres -p $env:DOCKER_PASSWORD
+          if ($LASTEXITCODE -ne 0) { throw "Docker login failed." }
+        env:
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
         if: ${{ success() && steps.should.outputs.continue == 'true' }}
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v4
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REPO }}
           flavor: |
             latest=false
           tags: |
@@ -233,84 +238,101 @@ jobs:
             type=ref,event=tag
         if: ${{ success() && steps.should.outputs.continue == 'true' }}
 
+      # example of manifests created:
+      # lambda3/github-runner-windows:main-windowsservercore-ltsc2019 (or 2022)
+      # lambda3/github-runner-windows:latest-windowsservercore-ltsc2019 (or 2022)
+      # lambda3/github-runner-windows:1.2.3-windowsservercore-ltsc2019 (or 2022)
       - name: Push manifest (${{ matrix.year }})
         run: |
           $sha = $(git rev-parse --short HEAD)
-          docker manifest create ${{ steps.meta.outputs.tags }}-windowsservercore-ltsc${{ matrix.year }} --amend ${env:REGISTRY}/${env:IMAGE_NAME}:$sha-windowsservercore-ltsc${{ matrix.year }}
+          docker manifest create ${{ steps.meta.outputs.tags }}-windowsservercore-ltsc${{ matrix.year }} --amend ${env:REPO}:$sha-windowsservercore-ltsc${{ matrix.year }}
           docker manifest push ${{ steps.meta.outputs.tags }}-windowsservercore-ltsc${{ matrix.year }}
         if: ${{ success() && steps.should.outputs.continue == 'true' }}
 
-  # scheduled: an update to latest tag because of base image update, will have ran 'build-and-push' job:
+      - name: Docker logout
+        run: docker logout
+        if: ${{ always() && steps.docker_login.outcome != 'skipped' }}
+
+  # scheduled: an update to latest tag because of base image update, will have ran 'push_to_registry' job:
   push_manifest_scheduled_latest:
-    name: Push Docker manifest to Container Registry (without year, latest tag, scheduled and with base image update)
+    name: Push Docker manifest to Docker Hub (without year, latest tag, scheduled and with base image update)
     runs-on: windows-latest
-    needs: ["build-and-push", "set_vars"]
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-    if: ${{ needs.set_vars.outputs.is_schedule == 'true' && needs.build-and-push.outputs.pushed == 'true' }}
+    needs: ["push_to_registry", "set_vars"]
+    if: ${{ success() && needs.set_vars.outputs.is_schedule == 'true' && (needs.push_to_registry.outputs.push_2019 == 'true' || needs.push_to_registry.outputs.push_2022 == 'true') }}
     env:
       DOCKER_CLI_EXPERIMENTAL: enabled
     steps:
       - name: Check out the latest branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
         with:
           ref: latest
 
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker login
+        id: docker_login
+        run: |
+          $ErrorActionPreference = "Stop"
+          docker login -u lambdatres -p $env:DOCKER_PASSWORD
+          if ($LASTEXITCODE -ne 0) { throw "Docker login failed." }
+        env:
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
 
+      # example of manifests created:
+      # lambda3/github-runner-windows:latest
+      # lambda3/github-runner-windows:95aeca1 (sha)
       - name: Push manifest
         run: |
           $sha = $(git rev-parse --short HEAD)
-          docker manifest create ${env:REGISTRY}/${env:IMAGE_NAME}:latest --amend ${env:REGISTRY}/${env:IMAGE_NAME}:$sha-windowsservercore-ltsc2019 --amend ${env:REGISTRY}/${env:IMAGE_NAME}:$sha-windowsservercore-ltsc2022
-          docker manifest push ${env:REGISTRY}/${env:IMAGE_NAME}:latest
-          docker manifest create ${env:REGISTRY}/${env:IMAGE_NAME}:$sha --amend ${env:REGISTRY}/${env:IMAGE_NAME}:$sha-windowsservercore-ltsc2019 --amend ${env:REGISTRY}/${env:IMAGE_NAME}:$sha-windowsservercore-ltsc2022
-          docker manifest push ${env:REGISTRY}/${env:IMAGE_NAME}:$sha
+          docker manifest create ${env:REPO}:latest --amend ${env:REPO}:$sha-windowsservercore-ltsc2019 --amend ${env:REPO}:$sha-windowsservercore-ltsc2022
+          docker manifest push ${env:REPO}:latest
+          docker manifest create ${env:REPO}:$sha --amend ${env:REPO}:$sha-windowsservercore-ltsc2019 --amend ${env:REPO}:$sha-windowsservercore-ltsc2022
+          docker manifest push ${env:REPO}:$sha
+      - name: Docker logout
+        run: docker logout
+        if: ${{ always() && steps.docker_login.outcome != 'skipped' }}
 
-  # not scheduled, without year, pushes to main and tags, might run 'build-and-push' job (push to main) or not (push to latest and tags):
+  # not scheduled, without year, pushes to main and tags, might run 'push_to_registry' job (push to main) or not (push to latest and tags):
   push_manifest_branches_and_tags_without_year:
-    name: Push Docker manifest to Container Registry (without year, via branch and tag updates)
+    name: Push Docker manifest to Docker Hub (without year, via branch and tag updates)
     runs-on: windows-latest
-    needs: ["build-and-push", "set_vars"]
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-    if: ${{ always() && needs.set_vars.outputs.is_schedule != 'true' && ((needs.build-and-push.result == 'success' && needs.build-and-push.outputs.pushed == 'true') || (needs.build-and-push.result == 'skipped' && (github.event_name == 'push' && (github.ref == 'refs/heads/latest' || github.ref_type == 'tag')))) }}
+    needs: ["push_to_registry", "set_vars"]
+    if: ${{ always() && needs.set_vars.outputs.is_schedule != 'true' && ((needs.push_to_registry.result == 'success' && (needs.push_to_registry.outputs.push_2019 == 'true' || needs.push_to_registry.outputs.push_2022 == 'true')) || (needs.push_to_registry.result == 'skipped' && (github.event_name == 'push' && (github.ref == 'refs/heads/latest' || github.ref_type == 'tag')))) }}
     env:
       DOCKER_CLI_EXPERIMENTAL: enabled
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
 
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker login
+        id: docker_login
+        run: |
+          $ErrorActionPreference = "Stop"
+          docker login -u lambdatres -p $env:DOCKER_PASSWORD
+          if ($LASTEXITCODE -ne 0) { throw "Docker login failed." }
+        env:
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v4
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REPO }}
           flavor: |
             latest=false
           tags: |
             type=ref,event=branch
             type=ref,event=tag
-
+      # example of manifests created:
+      # lambda3/github-runner-windows:main
+      # lambda3/github-runner-windows:latest
+      # lambda3/github-runner-windows:1.2.3
+      # lambda3/github-runner-windows:95aeca1 (sha)
       - name: Push manifest
         run: |
           $sha = $(git rev-parse --short HEAD)
-          docker manifest create ${{ steps.meta.outputs.tags }} --amend ${env:REGISTRY}/${env:IMAGE_NAME}:$sha-windowsservercore-ltsc2019 --amend ${env:REGISTRY}/${env:IMAGE_NAME}:$sha-windowsservercore-ltsc2022
+          docker manifest create ${{ steps.meta.outputs.tags }} --amend ${env:REPO}:$sha-windowsservercore-ltsc2019 --amend ${env:REPO}:$sha-windowsservercore-ltsc2022
           docker manifest push ${{ steps.meta.outputs.tags }}
-          docker manifest create ${env:REGISTRY}/${env:IMAGE_NAME}:$sha --amend ${env:REGISTRY}/${env:IMAGE_NAME}:$sha-windowsservercore-ltsc2019 --amend ${env:REGISTRY}/${env:IMAGE_NAME}:$sha-windowsservercore-ltsc2022
-          docker manifest push ${env:REGISTRY}/${env:IMAGE_NAME}:$sha
+          docker manifest create ${env:REPO}:$sha --amend ${env:REPO}:$sha-windowsservercore-ltsc2019 --amend ${env:REPO}:$sha-windowsservercore-ltsc2022
+          docker manifest push ${env:REPO}:$sha
+      - name: Docker logout
+        run: docker logout
+        if: ${{ always() && steps.docker_login.outcome != 'skipped' }}
