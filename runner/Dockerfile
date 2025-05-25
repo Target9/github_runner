@@ -18,6 +18,8 @@ RUN Invoke-WebRequest https://nodejs.org/dist/v16.15.1/node-v16.15.1-win-x64.zip
 FROM mcr.microsoft.com/windows/servercore:ltsc2022
 ARG RUNNER_NAME 
 LABEL maintainer="giggio@giggio.net"
+LABEL org.opencontainers.image.os=windows
+LABEL org.opencontainers.image.os.version=10.0.20348
 WORKDIR c:\actions-runner\
 SHELL [ "powershell.exe", "-NoLogo", "-Command", "$ErrorActionPreference='Stop';", "$ProgressPreference='SilentlyContinue';" ]
 RUN if ($env:RUNNER_NAME) { setx RUNNER_NAME $env:RUNNER_NAME }
