@@ -50,7 +50,7 @@ jobs:
         id: set_outputs
         run: |
           is_workflow_dispatch=${{ github.event_name == 'workflow_dispatch' }}
-          echo "::set-output name=is_workflow_dispatch::$is_workflow_dispatch"
+          echo "is_workflow_dispatch=$is_workflow_dispatch" >> $GITHUB_OUTPUT
 
   push_to_registry:
     name: Build and push image to Container Registry
@@ -110,7 +110,7 @@ jobs:
             docker push $_
             if ($LASTEXITCODE -ne 0) { throw "Docker push failed." }
           })
-          Write-Output "::set-output name=push_${{ matrix.year }}::true"
+          echo "push_${{ matrix.year }}=true" >> $env:GITHUB_OUTPUT
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
         if: ${{ success() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (inputs.push && needs.set_vars.outputs.is_workflow_dispatch == 'true')) }}
@@ -143,7 +143,7 @@ jobs:
           Write-Output "github.ref: ${{ github.ref }}"
           Write-Output "github.ref_type: ${{ github.ref_type }}"
           $shouldContinue = "${{ (needs.push_to_registry.result == 'success' && needs.push_to_registry.outputs[format('push_{0}', matrix.year)] == 'true') || (needs.push_to_registry.result == 'skipped' && (github.event_name == 'push' && github.ref_type == 'tag')) }}"
-          Write-Output "::set-output name=continue::$shouldContinue"
+          echo "continue=$shouldContinue" >> $env:GITHUB_OUTPUT
       - name: Check out the repo
         uses: actions/checkout@v2
         if: ${{ success() && steps.should.outputs.continue == 'true' }}
