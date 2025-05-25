@@ -173,8 +173,8 @@ jobs:
         run: |
           $sha = $(git rev-parse --short HEAD)
           $repo = "${{ env.REGISTRY }}/${{ env.REPO }}".ToLower()
-          docker manifest create $repo:$sha-windowsservercore-ltsc${{ matrix.year }} --amend $repo:$sha-windowsservercore-ltsc${{ matrix.year }}
-          docker manifest push $repo:$sha-windowsservercore-ltsc${{ matrix.year }}
+          docker manifest create "${repo}:${sha}-windowsservercore-ltsc${{ matrix.year }}" --amend "${repo}:${sha}-windowsservercore-ltsc${{ matrix.year }}"
+          docker manifest push "${repo}:${sha}-windowsservercore-ltsc${{ matrix.year }}"
         if: ${{ success() && steps.should.outputs.continue == 'true' }}
 
       - name: Docker logout
@@ -215,10 +215,10 @@ jobs:
         run: |
           $sha = $(git rev-parse --short HEAD)
           $repo = "${{ env.REGISTRY }}/${{ env.REPO }}".ToLower()
-          docker manifest create $repo:$sha --amend $repo:$sha-windowsservercore-ltsc2022
-          docker manifest push $repo:$sha
-          docker manifest create $repo:$sha --amend $repo:$sha-windowsservercore-ltsc2022
-          docker manifest push $repo:$sha
+          docker manifest create "${repo}:${sha}" --amend "${repo}:${sha}-windowsservercore-ltsc2022"
+          docker manifest push "${repo}:${sha}"
+          docker manifest create "${repo}:${sha}" --amend "${repo}:${sha}-windowsservercore-ltsc2022"
+          docker manifest push "${repo}:${sha}"
 
       - name: Docker logout
         run: docker logout ${{ env.REGISTRY }}
