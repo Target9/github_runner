@@ -42,7 +42,7 @@ RUN setx PATH \"$env:PATH;C:\Program Files\Git\usr\bin\"
 # docker, index at: https://dockermsft.blob.core.windows.net/dockercontainer/DockerMsftIndex.json
 RUN mkdir $env:temp\docker\extracted\ | out-null; `
     mkdir $env:ProgramFiles\Docker\ | out-null; `
-    Invoke-WebRequest https://dockermsft.azureedge.net/dockercontainer/docker-20-10-9.zip -OutFile $env:temp\docker\docker.zip; `
+    Invoke-WebRequest https://download.docker.com/win/static/stable/x86_64/docker-20.10.9.zip -OutFile $env:temp\docker\docker.zip; `
     Add-Type -AssemblyName System.IO.Compression.FileSystem ; `
     [System.IO.Compression.ZipFile]::ExtractToDirectory(\"$env:temp\docker\docker.zip\", \"$env:temp\docker\extracted\"); `
     get-childitem -Recurse \"$env:temp\docker\extracted\docker\" | Move-Item -Destination \"$env:ProgramFiles\Docker\"; `
