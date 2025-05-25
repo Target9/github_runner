@@ -31,6 +31,10 @@ on:
       - ".gitattribute"
       - ".gitignore"
 
+permissions:
+  contents: read
+  packages: write
+
 env:
   REGISTRY: ghcr.io
   REPO: ${{ github.repository }}
