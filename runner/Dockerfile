@@ -1,7 +1,6 @@
 # escape=`
-ARG LTSC_YEAR=2022
 ARG RUNNER_NAME
-FROM mcr.microsoft.com/windows/servercore:ltsc${LTSC_YEAR} as runner
+FROM mcr.microsoft.com/windows/servercore:ltsc2022 as runner
 SHELL [ "powershell.exe", "-NoLogo", "-Command", "$ErrorActionPreference='Stop';", "$ProgressPreference='SilentlyContinue';" ]
 # runner, auto download latest release
 RUN Invoke-WebRequest https://nodejs.org/dist/v16.15.1/node-v16.15.1-win-x64.zip -OutFile node.zip; `
@@ -16,13 +15,11 @@ RUN Invoke-WebRequest https://nodejs.org/dist/v16.15.1/node-v16.15.1-win-x64.zip
     if ($assetUrl.count -ne 1) { throw \"Found more than one version.\" } `
     Invoke-WebRequest $assetUrl -OutFile C:\actions-runner.zip;
 
-FROM mcr.microsoft.com/windows/servercore:ltsc${LTSC_YEAR}
-ARG LTSC_YEAR
+FROM mcr.microsoft.com/windows/servercore:ltsc2022
 ARG RUNNER_NAME 
 LABEL maintainer="giggio@giggio.net"
 WORKDIR c:\actions-runner\
 SHELL [ "powershell.exe", "-NoLogo", "-Command", "$ErrorActionPreference='Stop';", "$ProgressPreference='SilentlyContinue';" ]
-RUN setx LTSC_YEAR $env:LTSC_YEAR
 RUN if ($env:RUNNER_NAME) { setx RUNNER_NAME $env:RUNNER_NAME }
 COPY --from=runner C:\actions-runner.zip C:\actions-runner\
 RUN Add-Type -AssemblyName System.IO.Compression.FileSystem; `
