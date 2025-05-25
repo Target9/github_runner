@@ -37,7 +37,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  REPO: ${{ github.repository }}
+  REPO: ${{ github.repository_owner }}/github_runner
 
 jobs:
   set_vars:
@@ -172,8 +172,9 @@ jobs:
       - name: Push manifest (${{ matrix.year }})
         run: |
           $sha = $(git rev-parse --short HEAD)
-          docker manifest create ${{ steps.meta.outputs.tags }}-windowsservercore-ltsc${{ matrix.year }} --amend ${env:REGISTRY}/${env:REPO}:$sha-windowsservercore-ltsc${{ matrix.year }}
-          docker manifest push ${{ steps.meta.outputs.tags }}-windowsservercore-ltsc${{ matrix.year }}
+          $repo = "${{ env.REGISTRY }}/${{ env.REPO }}".ToLower()
+          docker manifest create $repo:$sha-windowsservercore-ltsc${{ matrix.year }} --amend $repo:$sha-windowsservercore-ltsc${{ matrix.year }}
+          docker manifest push $repo:$sha-windowsservercore-ltsc${{ matrix.year }}
         if: ${{ success() && steps.should.outputs.continue == 'true' }}
 
       - name: Docker logout
@@ -213,10 +214,11 @@ jobs:
       - name: Push manifest
         run: |
           $sha = $(git rev-parse --short HEAD)
-          docker manifest create ${{ steps.meta.outputs.tags }} --amend ${env:REGISTRY}/${env:REPO}:$sha-windowsservercore-ltsc2022
-          docker manifest push ${{ steps.meta.outputs.tags }}
-          docker manifest create ${env:REGISTRY}/${env:REPO}:$sha --amend ${env:REGISTRY}/${env:REPO}:$sha-windowsservercore-ltsc2022
-          docker manifest push ${env:REGISTRY}/${env:REPO}:$sha
+          $repo = "${{ env.REGISTRY }}/${{ env.REPO }}".ToLower()
+          docker manifest create $repo:$sha --amend $repo:$sha-windowsservercore-ltsc2022
+          docker manifest push $repo:$sha
+          docker manifest create $repo:$sha --amend $repo:$sha-windowsservercore-ltsc2022
+          docker manifest push $repo:$sha
 
       - name: Docker logout
         run: docker logout ${{ env.REGISTRY }}
