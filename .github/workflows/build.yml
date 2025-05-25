@@ -66,8 +66,8 @@ jobs:
       matrix:
         year: ["2019", "2022"]
     runs-on: windows-${{ matrix.year }}
-    # do not run for pushes of tags and latest branch
-    if: ${{ success() && (!(github.event_name == 'push' && (github.ref == 'refs/heads/latest' || startsWith(github.ref, 'refs/tags/')))) }}
+    # do not run for pushes of tags
+    if: ${{ success() && (!(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))) }}
     outputs:
       push_2019: ${{ steps.push_image.outputs[format('push_{0}', matrix.year)] == 'true' }}
       push_2022: ${{ steps.push_image.outputs[format('push_{0}', matrix.year)] == 'true' }}
@@ -76,10 +76,10 @@ jobs:
         uses: actions/checkout@v2
         if: ${{ needs.set_vars.outputs.is_schedule != 'true' }}
 
-      - name: Check out the latest branch
+      - name: Check out the main branch
         uses: actions/checkout@v2
         with:
-          ref: latest
+          ref: main
         if: ${{ needs.set_vars.outputs.is_schedule == 'true' }}
 
       - name: Extract metadata (tags, labels) for Docker
@@ -161,10 +161,10 @@ jobs:
         run: |
           $shouldContinue = "${{ needs.push_to_registry.outputs[format('push_{0}', matrix.year)] == 'true' }}"
           Write-Output "::set-output name=continue::$shouldContinue"
-      - name: Check out the latest branch
+      - name: Check out the main branch
         uses: actions/checkout@v2
         with:
-          ref: latest
+          ref: main
         if: ${{ success() && steps.should.outputs.continue == 'true' }}
 
       - name: Docker login
@@ -214,7 +214,7 @@ jobs:
           Write-Output "github.event_name: ${{ github.event_name }}"
           Write-Output "github.ref: ${{ github.ref }}"
           Write-Output "github.ref_type: ${{ github.ref_type }}"
-          $shouldContinue = "${{ (needs.push_to_registry.result == 'success' && needs.push_to_registry.outputs[format('push_{0}', matrix.year)] == 'true') || (needs.push_to_registry.result == 'skipped' && (github.event_name == 'push' && (github.ref == 'refs/heads/latest' || github.ref_type == 'tag'))) }}"
+          $shouldContinue = "${{ (needs.push_to_registry.result == 'success' && needs.push_to_registry.outputs[format('push_{0}', matrix.year)] == 'true') || (needs.push_to_registry.result == 'skipped' && (github.event_name == 'push' && github.ref_type == 'tag')) }}"
           Write-Output "::set-output name=continue::$shouldContinue"
       - name: Check out the repo
         uses: actions/checkout@v2
@@ -265,10 +265,10 @@ jobs:
     env:
       DOCKER_CLI_EXPERIMENTAL: enabled
     steps:
-      - name: Check out the latest branch
+      - name: Check out the main branch
         uses: actions/checkout@v2
         with:
-          ref: latest
+          ref: main
 
       - name: Docker login
         id: docker_login
@@ -298,7 +298,7 @@ jobs:
     name: Push Docker manifest to Container Registry (without year, via branch and tag updates)
     runs-on: windows-latest
     needs: ["push_to_registry", "set_vars"]
-    if: ${{ always() && needs.set_vars.outputs.is_schedule != 'true' && ((needs.push_to_registry.result == 'success' && (needs.push_to_registry.outputs.push_2019 == 'true' || needs.push_to_registry.outputs.push_2022 == 'true')) || (needs.push_to_registry.result == 'skipped' && (github.event_name == 'push' && (github.ref == 'refs/heads/latest' || github.ref_type == 'tag')))) }}
+    if: ${{ always() && needs.set_vars.outputs.is_schedule != 'true' && ((needs.push_to_registry.result == 'success' && (needs.push_to_registry.outputs.push_2019 == 'true' || needs.push_to_registry.outputs.push_2022 == 'true')) || (needs.push_to_registry.result == 'skipped' && (github.event_name == 'push' && github.ref_type == 'tag'))) }}
     env:
       DOCKER_CLI_EXPERIMENTAL: enabled
     steps:
