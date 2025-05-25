@@ -39,12 +39,6 @@ RUN powershell.exe -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command
 # git, jq
 RUN [ "choco", "install", "--no-progress", "-y", "git.install", "jq" ]
 RUN setx PATH \"$env:PATH;C:\Program Files\Git\usr\bin\"
-# python versions
-RUN [ "choco", "install", "--no-progress", "-y", "pyenv-win" ]
-RUN setx PYENV \"$env:USERPROFILE\.pyenv\pyenv-win\"
-RUN setx PATH \"$env:PYENV\bin;$env:PYENV\shims;$env:PATH\"
-RUN pyenv install 3.12.2; `
-    pyenv global 3.12.2
 # docker, index at: https://dockermsft.blob.core.windows.net/dockercontainer/DockerMsftIndex.json
 RUN mkdir $env:temp\docker\extracted\ | out-null; `
     mkdir $env:ProgramFiles\Docker\ | out-null; `
