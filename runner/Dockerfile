@@ -43,11 +43,8 @@ RUN setx PATH \"$env:PATH;C:\Program Files\Git\usr\bin\"
 RUN [ "choco", "install", "--no-progress", "-y", "pyenv-win" ]
 RUN setx PYENV \"$env:USERPROFILE\.pyenv\pyenv-win\"
 RUN setx PATH \"$env:PYENV\bin;$env:PYENV\shims;$env:PATH\"
-RUN pyenv install 3.8.10; `
-    pyenv install 3.9.13; `
-    pyenv install 3.10.4; `
-    pyenv install 3.11.0; `
-    pyenv global 3.11.0
+RUN pyenv install 3.13.0; `
+    pyenv global 3.13.0
 # docker, index at: https://dockermsft.blob.core.windows.net/dockercontainer/DockerMsftIndex.json
 RUN mkdir $env:temp\docker\extracted\ | out-null; `
     mkdir $env:ProgramFiles\Docker\ | out-null; `
