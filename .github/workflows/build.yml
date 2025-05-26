@@ -52,13 +52,10 @@ jobs:
           is_workflow_dispatch=${{ github.event_name == 'workflow_dispatch' }}
           echo "is_workflow_dispatch=$is_workflow_dispatch" >> $GITHUB_OUTPUT
 
-  build_windows:
-    name: Build Windows images
+  build_windows_2019:
+    name: Build Windows Server 2019 image
     needs: set_vars
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        windows_version: [ltsc2019, ltsc2022]
+    runs-on: windows-2019
     # do not run for pushes of tags
     if: ${{ success() && (!(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))) }}
     outputs:
@@ -75,17 +72,80 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            type=sha,prefix=,suffix=-${{ matrix.windows_version }}
+            type=sha,prefix=,suffix=-ltsc2019
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.description=GitHub Actions runner for Windows Server Core
+            org.opencontainers.image.description=GitHub Actions runner for Windows Server Core 2019
             org.opencontainers.image.licenses=MIT
 
       - name: Build image
         working-directory: ./runner/
         run: |
           $ErrorActionPreference = "Stop"
-          Invoke-Expression "docker build --isolation process --pull --build-arg WINDOWS_VERSION=${{ matrix.windows_version }} $($env:TAGS.Split("`n") | % { '-t "' + $_ + '"' }) $($env:LABELS.Split("`n") | % { '--label "' + $_ + '"' }) ."
+          Invoke-Expression "docker build --isolation process --pull --build-arg WINDOWS_VERSION=ltsc2019 $($env:TAGS.Split("`n") | % { '-t "' + $_ + '"' }) $($env:LABELS.Split("`n") | % { '--label "' + $_ + '"' }) ."
+          if ($LASTEXITCODE -ne 0) { throw "Docker build failed." }
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          LABELS: ${{ steps.meta.outputs.labels }}
+        if: ${{ success() && (contains(fromJson('["push", "pull_request"]'), github.event_name) || needs.set_vars.outputs.is_workflow_dispatch == 'true') }}
+
+      - name: Docker login
+        id: docker_login
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        if: ${{ success() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (inputs.push && needs.set_vars.outputs.is_workflow_dispatch == 'true')) }}
+
+      - name: Push image
+        id: push_image
+        run: |
+          $ErrorActionPreference = "Stop"
+          $($env:TAGS.Split("`n") | % {
+            docker push $_
+            if ($LASTEXITCODE -ne 0) { throw "Docker push failed." }
+          })
+          echo "push_success=true" >> $env:GITHUB_OUTPUT
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        if: ${{ success() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (inputs.push && needs.set_vars.outputs.is_workflow_dispatch == 'true')) }}
+
+      - name: Docker logout
+        run: docker logout ${{ env.REGISTRY }}
+        if: ${{ always() && steps.docker_login.outcome != 'skipped' }}
+
+  build_windows_2022:
+    name: Build Windows Server 2022 image
+    needs: set_vars
+    runs-on: windows-2022
+    # do not run for pushes of tags
+    if: ${{ success() && (!(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))) }}
+    outputs:
+      push_success: ${{ steps.push_image.outputs.push_success == 'true' }}
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v2
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.REPO }}
+          flavor: |
+            latest=false
+          tags: |
+            type=sha,prefix=,suffix=-ltsc2022
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.description=GitHub Actions runner for Windows Server Core 2022
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build image
+        working-directory: ./runner/
+        run: |
+          $ErrorActionPreference = "Stop"
+          Invoke-Expression "docker build --isolation process --pull --build-arg WINDOWS_VERSION=ltsc2022 $($env:TAGS.Split("`n") | % { '-t "' + $_ + '"' }) $($env:LABELS.Split("`n") | % { '--label "' + $_ + '"' }) ."
           if ($LASTEXITCODE -ne 0) { throw "Docker build failed." }
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
@@ -120,9 +180,9 @@ jobs:
 
   push_manifest:
     name: Push Docker manifest to Container Registry
-    runs-on: windows-latest
-    needs: ["build_windows", "set_vars"]
-    if: ${{ always() && needs.set_vars.outputs.is_schedule != 'true' && ((needs.build_windows.result == 'success' && needs.build_windows.outputs.push_success == 'true') || (needs.build_windows.result == 'skipped' && (github.event_name == 'push' && github.ref_type == 'tag'))) }}
+    runs-on: windows-2022
+    needs: ["build_windows_2019", "build_windows_2022", "set_vars"]
+    if: ${{ always() && needs.set_vars.outputs.is_schedule != 'true' && ((needs.build_windows_2019.result == 'success' && needs.build_windows_2019.outputs.push_success == 'true' && needs.build_windows_2022.result == 'success' && needs.build_windows_2022.outputs.push_success == 'true') || (needs.build_windows_2019.result == 'skipped' && needs.build_windows_2022.result == 'skipped' && (github.event_name == 'push' && github.ref_type == 'tag'))) }}
     env:
       DOCKER_CLI_EXPERIMENTAL: enabled
     steps:
