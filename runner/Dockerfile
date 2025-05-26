@@ -30,24 +30,32 @@ RUN Add-Type -AssemblyName System.IO.Compression.FileSystem; `
     Remove-Item actions-runner.zip
 
 # Install .NET Framework 4.8
-RUN Invoke-WebRequest -Uri "https://download.visualstudio.microsoft.com/download/pr/2d6bb6b2-226a-4baa-bdec-798822606ff1/8494001c276a4b96804cde7829c04d7f/ndp48-x86-x64-allos-enu.exe" -OutFile "$env:TEMP\ndp48-installer.exe"; `
-    Start-Process -FilePath "$env:TEMP\ndp48-installer.exe" -ArgumentList "/quiet", "/norestart", "/log", "$env:TEMP\ndp48-install.log" -Wait; `
-    Get-Content "$env:TEMP\ndp48-install.log"; `
-    Remove-Item "$env:TEMP\ndp48-installer.exe"; `
-    Remove-Item "$env:TEMP\ndp48-install.log"
+RUN $dotnet48Url = "https://download.visualstudio.microsoft.com/download/pr/2d6bb6b2-226a-4baa-bdec-798822606ff1/8494001c276a4b96804cde7829c04d7f/ndp48-x86-x64-allos-enu.exe"; `
+    $dotnet48Installer = "$env:TEMP\ndp48-installer.exe"; `
+    Write-Host "Downloading .NET Framework 4.8..."; `
+    Invoke-WebRequest -Uri $dotnet48Url -OutFile $dotnet48Installer; `
+    Write-Host "Installing .NET Framework 4.8..."; `
+    Start-Process -FilePath $dotnet48Installer -ArgumentList "/quiet", "/norestart" -Wait -PassThru; `
+    Write-Host "Cleaning up .NET Framework 4.8 installer..."; `
+    Remove-Item $dotnet48Installer -Force; `
+    Write-Host ".NET Framework 4.8 installation completed."
 
 # Install Chocolatey and required packages
 RUN [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; `
+    Write-Host "Installing Chocolatey..."; `
     iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')); `
     $env:Path = "$env:Path;C:\ProgramData\chocolatey\bin"; `
+    Write-Host "Configuring Chocolatey..."; `
     choco feature enable -n allowGlobalConfirmation; `
+    Write-Host "Installing Git and jq..."; `
     choco install --no-progress -y git.install jq
 
 # Set up Git path
 RUN setx PATH \"$env:PATH;C:\Program Files\Git\usr\bin\"
 
 # Install Docker
-RUN mkdir $env:temp\docker\extracted\ | out-null; `
+RUN Write-Host "Installing Docker..."; `
+    mkdir $env:temp\docker\extracted\ | out-null; `
     mkdir $env:ProgramFiles\Docker\ | out-null; `
     Invoke-WebRequest https://download.docker.com/win/static/stable/x86_64/docker-20.10.9.zip -OutFile $env:temp\docker\docker.zip; `
     Add-Type -AssemblyName System.IO.Compression.FileSystem ; `
@@ -56,6 +64,7 @@ RUN mkdir $env:temp\docker\extracted\ | out-null; `
     Remove-Item $env:temp\docker\ -Recurse -Force; `
     [Environment]::SetEnvironmentVariable('PATH', \"$env:ProgramFiles\Docker\;$env:PATH\", [EnvironmentVariableTarget]::Machine); `
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; `
+    Write-Host "Installing Docker Compose..."; `
     Invoke-WebRequest https://github.com/docker/compose/releases/download/1.29.2/docker-compose-Windows-x86_64.exe -UseBasicParsing -OutFile $Env:ProgramFiles\Docker\docker-compose.exe
 
 COPY *.ps1 c:\actions-runner\
