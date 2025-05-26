@@ -43,7 +43,7 @@ RUN powershell.exe -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command
     if (-not (Test-Path 'C:\ProgramData\chocolatey\bin\choco.exe')) { throw "Failed to verify Chocolatey installation" }
 
 # Install git and jq using Chocolatey
-RUN choco install --no-progress -y git.install jq; `
+RUN [ "choco", "install", "--no-progress", "-y", "git.install", "jq" ]; `
     if (-not (Test-Path 'C:\Program Files\Git\bin\git.exe')) { throw "Failed to verify Git installation" }; `
     if (-not (Test-Path 'C:\ProgramData\chocolatey\bin\jq.exe')) { throw "Failed to verify jq installation" }
 
