@@ -1,6 +1,7 @@
 # escape=`
 ARG RUNNER_NAME
-FROM mcr.microsoft.com/windows/servercore:ltsc2022 as runner
+ARG WINDOWS_VERSION=ltsc2022
+FROM mcr.microsoft.com/windows/servercore:${WINDOWS_VERSION} as runner
 SHELL [ "powershell.exe", "-NoLogo", "-Command", "$ErrorActionPreference='Stop';", "$ProgressPreference='SilentlyContinue';" ]
 # runner, auto download latest release
 RUN Invoke-WebRequest https://nodejs.org/dist/v16.15.1/node-v16.15.1-win-x64.zip -OutFile node.zip; `
@@ -15,7 +16,7 @@ RUN Invoke-WebRequest https://nodejs.org/dist/v16.15.1/node-v16.15.1-win-x64.zip
     if ($assetUrl.count -ne 1) { throw \"Found more than one version.\" } `
     Invoke-WebRequest $assetUrl -OutFile C:\actions-runner.zip;
 
-FROM mcr.microsoft.com/windows/servercore:ltsc2022
+FROM mcr.microsoft.com/windows/servercore:${WINDOWS_VERSION}
 ARG RUNNER_NAME 
 LABEL maintainer="giggio@giggio.net"
 LABEL org.opencontainers.image.os=windows

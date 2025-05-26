@@ -52,10 +52,13 @@ jobs:
           is_workflow_dispatch=${{ github.event_name == 'workflow_dispatch' }}
           echo "is_workflow_dispatch=$is_workflow_dispatch" >> $GITHUB_OUTPUT
 
-  push_to_registry:
-    name: Build and push image to Container Registry
+  build_windows:
+    name: Build Windows images
     needs: set_vars
     runs-on: windows-latest
+    strategy:
+      matrix:
+        windows_version: [ltsc2019, ltsc2022]
     # do not run for pushes of tags
     if: ${{ success() && (!(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))) }}
     outputs:
@@ -72,7 +75,7 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            type=sha,prefix=,suffix=-windowsservercore
+            type=sha,prefix=,suffix=-${{ matrix.windows_version }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.description=GitHub Actions runner for Windows Server Core
@@ -82,7 +85,7 @@ jobs:
         working-directory: ./runner/
         run: |
           $ErrorActionPreference = "Stop"
-          Invoke-Expression "docker build --isolation process --pull $($env:TAGS.Split("`n") | % { '-t "' + $_ + '"' }) $($env:LABELS.Split("`n") | % { '--label "' + $_ + '"' }) ."
+          Invoke-Expression "docker build --isolation process --pull --build-arg WINDOWS_VERSION=${{ matrix.windows_version }} $($env:TAGS.Split("`n") | % { '-t "' + $_ + '"' }) $($env:LABELS.Split("`n") | % { '--label "' + $_ + '"' }) ."
           if ($LASTEXITCODE -ne 0) { throw "Docker build failed." }
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
@@ -118,8 +121,8 @@ jobs:
   push_manifest:
     name: Push Docker manifest to Container Registry
     runs-on: windows-latest
-    needs: ["push_to_registry", "set_vars"]
-    if: ${{ always() && needs.set_vars.outputs.is_schedule != 'true' && ((needs.push_to_registry.result == 'success' && needs.push_to_registry.outputs.push_success == 'true') || (needs.push_to_registry.result == 'skipped' && (github.event_name == 'push' && github.ref_type == 'tag'))) }}
+    needs: ["build_windows", "set_vars"]
+    if: ${{ always() && needs.set_vars.outputs.is_schedule != 'true' && ((needs.build_windows.result == 'success' && needs.build_windows.outputs.push_success == 'true') || (needs.build_windows.result == 'skipped' && (github.event_name == 'push' && github.ref_type == 'tag'))) }}
     env:
       DOCKER_CLI_EXPERIMENTAL: enabled
     steps:
@@ -149,7 +152,7 @@ jobs:
         run: |
           $sha = $(git rev-parse --short HEAD)
           $repo = "${{ env.REGISTRY }}/${{ env.REPO }}".ToLower()
-          docker manifest create "${repo}:${sha}" --amend "${repo}:${sha}-windowsservercore"
+          docker manifest create "${repo}:${sha}" --amend "${repo}:${sha}-ltsc2019" --amend "${repo}:${sha}-ltsc2022"
           docker manifest push "${repo}:${sha}"
 
       - name: Docker logout
