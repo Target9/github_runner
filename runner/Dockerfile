@@ -29,23 +29,26 @@ RUN Add-Type -AssemblyName System.IO.Compression.FileSystem; `
     [System.IO.Compression.ZipFile]::ExtractToDirectory('actions-runner.zip', '.'); `
     Remove-Item actions-runner.zip
 
-# Install .NET Framework 4.8
-RUN if ($env:WINDOWS_VERSION -eq 'ltsc2019') { `
-        # For Windows Server 2019, install prerequisites first
-        Install-WindowsFeature NET-Framework-45-Core; `
-        Start-Sleep -Seconds 30; `
-    }; `
-    Invoke-WebRequest -Uri "https://download.visualstudio.microsoft.com/download/pr/2d6bb6b2-226a-4baa-bdec-798822606ff1/8494001c276a4b96804cde7829c04d7f/ndp48-x86-x64-allos-enu.exe" -OutFile "$env:TEMP\ndp48-installer.exe"; `
+# Install .NET Framework 4.8 and verify installation
+RUN Invoke-WebRequest -Uri "https://download.visualstudio.microsoft.com/download/pr/2d6bb6b2-226a-4baa-bdec-798822606ff1/8494001c276a4b96804cde7829c04d7f/ndp48-x86-x64-allos-enu.exe" -OutFile "$env:TEMP\ndp48-installer.exe"; `
     Start-Process -FilePath "$env:TEMP\ndp48-installer.exe" -ArgumentList "/quiet", "/norestart" -Wait; `
     Remove-Item "$env:TEMP\ndp48-installer.exe"; `
-    # Wait for .NET Framework installation to complete
-    Start-Sleep -Seconds 60
+    # Verify .NET Framework 4.8 installation
+    $dotnetVersion = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -ErrorAction SilentlyContinue).Version; `
+    if (-not $dotnetVersion) { throw "Failed to verify .NET Framework 4.8 installation" }
 
-#choco
-RUN powershell.exe -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
-# git, jq
-RUN [ "choco", "install", "--no-progress", "-y", "git.install", "jq" ]
+# Install Chocolatey and verify installation
+RUN powershell.exe -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"; `
+    # Verify Chocolatey installation
+    if (-not (Test-Path 'C:\ProgramData\chocolatey\bin\choco.exe')) { throw "Failed to verify Chocolatey installation" }
+
+# Install git and jq using Chocolatey
+RUN choco install --no-progress -y git.install jq; `
+    if (-not (Test-Path 'C:\Program Files\Git\bin\git.exe')) { throw "Failed to verify Git installation" }; `
+    if (-not (Test-Path 'C:\ProgramData\chocolatey\bin\jq.exe')) { throw "Failed to verify jq installation" }
+
 RUN setx PATH \"$env:PATH;C:\Program Files\Git\usr\bin\"
+
 # docker, index at: https://dockermsft.blob.core.windows.net/dockercontainer/DockerMsftIndex.json
 RUN mkdir $env:temp\docker\extracted\ | out-null; `
     mkdir $env:ProgramFiles\Docker\ | out-null; `
@@ -57,5 +60,6 @@ RUN mkdir $env:temp\docker\extracted\ | out-null; `
     [Environment]::SetEnvironmentVariable('PATH', \"$env:ProgramFiles\Docker\;$env:PATH\", [EnvironmentVariableTarget]::Machine); `
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; `
     Invoke-WebRequest https://github.com/docker/compose/releases/download/1.29.2/docker-compose-Windows-x86_64.exe -UseBasicParsing -OutFile $Env:ProgramFiles\Docker\docker-compose.exe
+
 COPY *.ps1 c:\actions-runner\
 CMD ["powershell", "-f", "configureAndRun.ps1"]
