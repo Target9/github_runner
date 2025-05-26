@@ -30,11 +30,16 @@ RUN Add-Type -AssemblyName System.IO.Compression.FileSystem; `
     Remove-Item actions-runner.zip
 
 # Install .NET Framework 4.8
-RUN Invoke-WebRequest -Uri "https://download.visualstudio.microsoft.com/download/pr/2d6bb6b2-226a-4baa-bdec-798822606ff1/8494001c276a4b96804cde7829c04d7f/ndp48-x86-x64-allos-enu.exe" -OutFile "$env:TEMP\ndp48-installer.exe"; `
+RUN if ($env:WINDOWS_VERSION -eq 'ltsc2019') { `
+        # For Windows Server 2019, install prerequisites first
+        Install-WindowsFeature NET-Framework-45-Core; `
+        Start-Sleep -Seconds 30; `
+    }; `
+    Invoke-WebRequest -Uri "https://download.visualstudio.microsoft.com/download/pr/2d6bb6b2-226a-4baa-bdec-798822606ff1/8494001c276a4b96804cde7829c04d7f/ndp48-x86-x64-allos-enu.exe" -OutFile "$env:TEMP\ndp48-installer.exe"; `
     Start-Process -FilePath "$env:TEMP\ndp48-installer.exe" -ArgumentList "/quiet", "/norestart" -Wait; `
     Remove-Item "$env:TEMP\ndp48-installer.exe"; `
     # Wait for .NET Framework installation to complete
-    Start-Sleep -Seconds 30
+    Start-Sleep -Seconds 60
 
 #choco
 RUN powershell.exe -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
