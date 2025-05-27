@@ -41,12 +41,13 @@ RUN [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityPro
     iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')); `
     Start-Sleep -Seconds 30; `
     # Add Chocolatey to PATH
-    $env:Path = "$env:Path;C:\ProgramData\chocolatey\bin"; `
+    $chocoPath = 'C:\ProgramData\chocolatey\bin'; `
+    $env:Path = "$env:Path;$chocoPath"; `
     [Environment]::SetEnvironmentVariable('Path', $env:Path, [EnvironmentVariableTarget]::Machine); `
     # Verify Chocolatey installation
-    if (-not (Test-Path "$env:ProgramData\chocolatey\bin\choco.exe")) { throw "Chocolatey installation failed" }; `
+    if (-not (Test-Path "$chocoPath\choco.exe")) { throw "Chocolatey installation failed" }; `
     # Install packages
-    & "$env:ProgramData\chocolatey\bin\choco.exe" install --no-progress -y git.install jq; `
+    & "$chocoPath\choco.exe" install --no-progress -y git.install jq; `
     if ($LASTEXITCODE -ne 0) { throw "Chocolatey package installation failed" }; `
     # Refresh PATH after git installation
     $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
