@@ -28,7 +28,7 @@ RUN Add-Type -AssemblyName System.IO.Compression.FileSystem; `
     [System.IO.Compression.ZipFile]::ExtractToDirectory('actions-runner.zip', '.'); `
     Remove-Item actions-runner.zip
 
-# Install .NET Framework 4.8
+# Install .NET Framework 4.8 and Chocolatey
 RUN Invoke-WebRequest -Uri "https://download.visualstudio.microsoft.com/download/pr/2d6bb6b2-226a-4baa-bdec-798822606ff1/8494001c276a4b96804cde7829c04d7f/ndp48-x86-x64-allos-enu.exe" -OutFile "$env:TEMP\ndp48-installer.exe"; `
     Start-Process -FilePath "$env:TEMP\ndp48-installer.exe" -ArgumentList "/quiet", "/norestart" -Wait; `
     Remove-Item "$env:TEMP\ndp48-installer.exe"; `
@@ -36,13 +36,23 @@ RUN Invoke-WebRequest -Uri "https://download.visualstudio.microsoft.com/download
     Start-Sleep -Seconds 30; `
     # Verify .NET Framework installation
     $dotnetVersion = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -ErrorAction SilentlyContinue).Version; `
-    if (-not $dotnetVersion) { throw ".NET Framework 4.8 installation failed or not completed" }
+    if (-not $dotnetVersion) { throw ".NET Framework 4.8 installation failed or not completed" }; `
+    # Install Chocolatey
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; `
+    iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')); `
+    # Refresh environment variables
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User"); `
+    # Wait for Chocolatey to be ready
+    Start-Sleep -Seconds 30; `
+    # Verify Chocolatey installation
+    if (-not (Test-Path "$env:ProgramData\chocolatey\bin\choco.exe")) { throw "Chocolatey installation failed" }
 
-#choco
-RUN powershell.exe -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
-# git, jq
-RUN [ "choco", "install", "--no-progress", "-y", "git.install", "jq" ]
-RUN setx PATH \"$env:PATH;C:\Program Files\Git\usr\bin\"
+# Install git and jq
+RUN choco install --no-progress -y git.install jq; `
+    if ($LASTEXITCODE -ne 0) { throw "Chocolatey package installation failed" }; `
+    # Refresh PATH after git installation
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
 # docker, index at: https://dockermsft.blob.core.windows.net/dockercontainer/DockerMsftIndex.json
 RUN mkdir $env:temp\docker\extracted\ | out-null; `
     mkdir $env:ProgramFiles\Docker\ | out-null; `
