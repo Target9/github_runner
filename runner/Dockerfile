@@ -7,7 +7,7 @@ SHELL [ "powershell.exe", "-NoLogo", "-Command", "$ErrorActionPreference='Stop';
 # runner, auto download latest release
 RUN Invoke-WebRequest https://nodejs.org/dist/v16.15.1/node-v16.15.1-win-x64.zip -OutFile node.zip; `
     Add-Type -AssemblyName System.IO.Compression.FileSystem; `
-    [System.IO.Compression.ZipFile]::ExtractToDirectory("$PWD/node.zip", "$env:TEMP\node"); `
+    [System.IO.Compression.ZipFile]::ExtractToDirectory("$PSScriptRoot\node.zip", "$env:TEMP\node"); `
     Move-Item "$env:TEMP\node\node-v16.15.1-win-x64" c:\node\; `
     $env:Path="c:\node\;$env:PATH"; `
     $releases = Invoke-RestMethod https://api.github.com/repos/actions/runner/releases; `
