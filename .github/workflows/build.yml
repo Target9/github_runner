@@ -42,7 +42,7 @@ env:
 jobs:
   set_vars:
     name: Set variables
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux]
     outputs:
       is_workflow_dispatch: ${{ steps.set_outputs.outputs.is_workflow_dispatch }}
     steps:
