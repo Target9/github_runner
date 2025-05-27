@@ -148,11 +148,22 @@ jobs:
 
       - name: Push manifest
         run: |
+          $ErrorActionPreference = "Stop"
           $sha = $(git rev-parse --short HEAD)
-          docker manifest create ${{ steps.meta.outputs.tags }} --amend ${env:REGISTRY}/${env:REPO}:$sha-windowsservercore-ltsc2019 --amend ${env:REGISTRY}/${env:REPO}:$sha-windowsservercore-ltsc2022
-          docker manifest push ${{ steps.meta.outputs.tags }}
-          docker manifest create ${env:REGISTRY}/${env:REPO}:$sha --amend ${env:REGISTRY}/${env:REPO}:$sha-windowsservercore-ltsc2019 --amend ${env:REGISTRY}/${env:REPO}:$sha-windowsservercore-ltsc2022
-          docker manifest push ${env:REGISTRY}/${env:REPO}:$sha
+          $repo = "${{ env.REGISTRY }}/${{ env.REPO }}".ToLower()
+          $branch = "${{ github.ref_name }}".ToLower()
+          
+          # Create and push manifest for branch
+          docker manifest create "${repo}:${branch}" `
+            --amend "${repo}:${sha}-windowsservercore-ltsc2019" `
+            --amend "${repo}:${sha}-windowsservercore-ltsc2022"
+          docker manifest push "${repo}:${branch}"
+          
+          # Create and push manifest for SHA
+          docker manifest create "${repo}:${sha}" `
+            --amend "${repo}:${sha}-windowsservercore-ltsc2019" `
+            --amend "${repo}:${sha}-windowsservercore-ltsc2022"
+          docker manifest push "${repo}:${sha}"
 
       - name: Docker logout
         run: docker logout ${{ env.REGISTRY }}
