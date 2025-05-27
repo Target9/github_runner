@@ -31,7 +31,12 @@ RUN Add-Type -AssemblyName System.IO.Compression.FileSystem; `
 # Install .NET Framework 4.8
 RUN Invoke-WebRequest -Uri "https://download.visualstudio.microsoft.com/download/pr/2d6bb6b2-226a-4baa-bdec-798822606ff1/8494001c276a4b96804cde7829c04d7f/ndp48-x86-x64-allos-enu.exe" -OutFile "$env:TEMP\ndp48-installer.exe"; `
     Start-Process -FilePath "$env:TEMP\ndp48-installer.exe" -ArgumentList "/quiet", "/norestart" -Wait; `
-    Remove-Item "$env:TEMP\ndp48-installer.exe"
+    Remove-Item "$env:TEMP\ndp48-installer.exe"; `
+    # Wait for .NET Framework installation to complete
+    Start-Sleep -Seconds 30; `
+    # Verify .NET Framework installation
+    $dotnetVersion = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -ErrorAction SilentlyContinue).Version; `
+    if (-not $dotnetVersion) { throw ".NET Framework 4.8 installation failed or not completed" }
 
 #choco
 RUN powershell.exe -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
